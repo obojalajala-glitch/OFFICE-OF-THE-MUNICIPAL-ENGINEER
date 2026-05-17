@@ -1,0 +1,8 @@
+{
+  "name": "Jalajala Municipal Engineering Portal",
+  "description": "Information and permit portal for the Office of the Municipal Engineer, Jalajala, Rizal.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}

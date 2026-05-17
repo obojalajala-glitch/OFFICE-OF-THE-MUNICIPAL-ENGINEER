@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "PermitApplication": {
+      "title": "Permit Application",
+      "description": "Engineering permit application submitted by a citizen.",
+      "type": "object",
+      "properties": {
+        "applicantId": { "type": "string", "description": "UID of the applicant" },
+        "type": { "type": "string", "enum": ["BUILDING_SIGN", "FENCING", "DEMOLITION", "EXCAVATION", "ELECTRICAL"] },
+        "status": { "type": "string", "enum": ["PENDING", "UNDER_REVIEW", "APPROVED", "NEEDS_REVISION"] },
+        "submissionDate": { "type": "number" },
+        "data": { "type": "object" },
+        "appointmentDate": { "type": "number" }
+      },
+      "required": ["applicantId", "type", "status", "submissionDate"]
+    },
+    "Project": {
+      "title": "Infrastructure Project",
+      "description": "Public infrastructure project managed by the engineering office.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "location": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "status": { "type": "string", "enum": ["PLANNING", "ONGOING", "COMPLETED"] },
+        "category": { "type": "string", "enum": ["NATIONAL", "CAPITOL", "MUNICIPAL", "BARANGAY"] },
+        "budget": { "type": "number" },
+        "description": { "type": "string" }
+      },
+      "required": ["name", "location", "lat", "lng", "status", "category", "budget"]
+    },
+    "IssueReport": {
+      "title": "Public Issue Report",
+      "description": "Hazard or maintenance report submitted by a citizen.",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["INSPECTION_REQUEST", "ILLEGAL_CONSTRUCTION", "ELECTRICAL_HAZARD", "ROADWAY_HAZARD", "WATERLINE_HAZARD"] },
+        "description": { "type": "string" },
+        "location": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "photoUrl": { "type": "string" },
+        "reporterName": { "type": "string", "description": "Full name of reporter as per ID" },
+        "idPhotoUrl": { "type": "string", "description": "URL or serial of valid ID" },
+        "timestamp": { "type": "number" },
+        "status": { "type": "string", "enum": ["NEW", "INVESTIGATING", "RESOLVED"] },
+        "userId": { "type": "string" }
+      },
+      "required": ["category", "description", "location", "timestamp", "status"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "User account and role information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string", "description": "Unique username for municipal portal login" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["CITIZEN", "ADMIN"] },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "username", "email", "role", "updatedAt"]
+    },
+    "Notification": {
+      "title": "In-app Notification",
+      "description": "Real-time alert for users/admins.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target recipient UID" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["PERMIT_UPDATE", "NEW_REPORT", "APPOINTMENT_REMINDER"] },
+        "read": { "type": "boolean" },
+        "link": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["userId", "title", "message", "read", "timestamp"]
+    },
+    "ActivityLog": {
+      "title": "Municipal Activity Log",
+      "description": "Immutably preserved audit record of municipal transactions.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["CITIZEN_REGISTRATION", "ADMIN_ACTION", "SYSTEM"] },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["type", "userId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/permits/{permitId}": {
+      "schema": "PermitApplication",
+      "description": "Collection of permit applications."
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Collection of infrastructure projects."
+    },
+    "/reports/{reportId}": {
+      "schema": "IssueReport",
+      "description": "Collection of issue reports."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Citizen profile data."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications."
+    },
+    "/activity_log/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Collection of audit logs."
+    }
+  }
+}

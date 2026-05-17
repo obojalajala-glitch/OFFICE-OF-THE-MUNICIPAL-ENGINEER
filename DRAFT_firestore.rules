@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- Permits ---
+    function isValidPermit(data) {
+      return data.applicantId is string && data.applicantId.size() <= 128 &&
+             data.type in ['BUILDING_SIGN', 'FENCING', 'DEMOLITION', 'EXCAVATION', 'ELECTRICAL'] &&
+             data.status in ['PENDING', 'UNDER_REVIEW', 'APPROVED', 'NEEDS_REVISION'] &&
+             data.submissionDate is number &&
+             data.keys().hasAll(['applicantId', 'type', 'status', 'submissionDate']) &&
+             data.keys().size() >= 4;
+    }
+
+    match /permits/{permitId} {
+      allow get: if isOwner(existing().applicantId) || isAdmin();
+      allow list: if isAdmin() || (isSignedIn() && resource.data.applicantId == request.auth.uid);
+      allow create: if isSignedIn() && 
+                    isValidId(permitId) && 
+                    isValidPermit(incoming()) && 
+                    incoming().applicantId == request.auth.uid &&
+                    incoming().status == 'PENDING';
+      allow update: if (isAdmin() || (isOwner(existing().applicantId) && incoming().applicantId == existing().applicantId)) &&
+                    isValidPermit(incoming()) &&
+                    (
+                      isAdmin() || // Admins can update anything valid
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['data', 'appointmentDate'])) // Citizens can only update data/appointment
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // --- Projects ---
+    function isValidProject(data) {
+      return data.name is string && data.name.size() <= 200 &&
+             data.location is string && data.location.size() <= 500 &&
+             data.lat is number && data.lng is number &&
+             data.status in ['PLANNING', 'ONGOING', 'COMPLETED'] &&
+             data.category in ['NATIONAL', 'CAPITOL', 'MUNICIPAL', 'BARANGAY'] &&
+             data.budget is number &&
+             data.keys().hasAll(['name', 'location', 'lat', 'lng', 'status', 'category', 'budget']) &&
+             data.keys().size() >= 7;
+    }
+
+    match /projects/{projectId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAdmin() && isValidId(projectId) && isValidProject(incoming());
+      allow update: if isAdmin() && isValidProject(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Reports ---
+    function isValidReport(data) {
+      return data.category in ['INSPECTION_REQUEST', 'ILLEGAL_CONSTRUCTION', 'ELECTRICAL_HAZARD', 'ROADWAY_HAZARD', 'WATERLINE_HAZARD'] &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.location is string && data.location.size() <= 500 &&
+             data.timestamp is number &&
+             data.status in ['NEW', 'INVESTIGATING', 'RESOLVED'] &&
+             data.keys().hasAll(['category', 'description', 'location', 'timestamp', 'status']);
+    }
+
+    match /reports/{reportId} {
+      allow get: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(reportId) && isValidReport(incoming()) && 
+                    (!isSignedIn() || incoming().userId == request.auth.uid); // Allow anonymous or logged in
+      allow update: if isAdmin() && isValidReport(incoming());
+      allow delete: if isAdmin();
+    }
+    
+    // Admin list
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only manageable via console
+    }
+  }
+}

@@ -1,0 +1,158 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { 
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'obo.jalajala@gmail.com' && request.auth.token.email_verified == true) ||
+        request.auth.token.email == 'jviterbo@jalajala.local' ||
+        request.auth.uid == 'ZNMLVtA9OecjIYVbkIGYyZ5ySpW2'
+      ); 
+    }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- Permits ---
+    function isValidPermit(data) {
+      return data.applicantId is string && data.applicantId.size() <= 128 &&
+             data.type in ['BUILDING_SIGN', 'FENCING', 'DEMOLITION', 'EXCAVATION', 'ELECTRICAL'] &&
+             data.status in ['PENDING', 'UNDER_REVIEW', 'APPROVED', 'NEEDS_REVISION'] &&
+             data.submissionDate is number &&
+             data.keys().hasAll(['applicantId', 'type', 'status', 'submissionDate']) &&
+             data.keys().size() >= 4;
+    }
+
+    match /permits/{permitId} {
+      allow get: if isOwner(existing().applicantId) || isAdmin();
+      allow list: if isAdmin() || (isSignedIn() && resource.data.applicantId == request.auth.uid);
+      allow create: if isSignedIn() && 
+                    isValidId(permitId) && 
+                    isValidPermit(incoming()) && 
+                    incoming().applicantId == request.auth.uid &&
+                    incoming().status == 'PENDING';
+      allow update: if (isAdmin() || (isOwner(existing().applicantId) && incoming().applicantId == existing().applicantId)) &&
+                    isValidPermit(incoming()) &&
+                    (
+                      isAdmin() || // Admins can update anything valid
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['data', 'appointmentDate'])) // Citizens can only update data/appointment
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // --- Projects ---
+    function isValidProject(data) {
+      return data.name is string && data.name.size() <= 200 &&
+             data.location is string && data.location.size() <= 500 &&
+             data.lat is number && data.lng is number &&
+             data.status in ['PLANNING', 'ONGOING', 'COMPLETED'] &&
+             data.category in ['NATIONAL', 'CAPITOL', 'MUNICIPAL', 'BARANGAY'] &&
+             data.budget is number &&
+             data.keys().hasAll(['name', 'location', 'lat', 'lng', 'status', 'category', 'budget']) &&
+             data.keys().size() >= 7;
+    }
+
+    match /projects/{projectId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAdmin() && isValidId(projectId) && isValidProject(incoming());
+      allow update: if isAdmin() && isValidProject(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Reports ---
+    function isValidReport(data) {
+      return data.category in ['INSPECTION_REQUEST', 'ILLEGAL_CONSTRUCTION', 'ELECTRICAL_HAZARD', 'ROADWAY_HAZARD', 'WATERLINE_HAZARD'] &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.location is string && data.location.size() <= 500 &&
+             data.reporterName is string && data.reporterName.size() <= 200 &&
+             data.idPhotoUrl is string && data.idPhotoUrl.size() <= 1000 &&
+             data.timestamp is number &&
+             data.status in ['NEW', 'INVESTIGATING', 'RESOLVED'] &&
+             data.keys().hasAll(['category', 'description', 'location', 'timestamp', 'status', 'reporterName', 'idPhotoUrl']);
+    }
+
+    match /reports/{reportId} {
+      allow get: if isAdmin() || (isSignedIn() && (resource == null || existing().userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(reportId) && isValidReport(incoming()) && 
+                    (!isSignedIn() || !incoming().keys().hasAll(['userId']) || incoming().userId == request.auth.uid); 
+      allow update: if isAdmin() && isValidReport(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Notifications ---
+    function isValidNotification(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.message is string && data.message.size() <= 1000 &&
+             data.read is bool &&
+             data.timestamp is number &&
+             (!data.keys().hasAll(['type']) || (data.type is string && data.type.size() <= 100)) &&
+             (!data.keys().hasAll(['link']) || (data.link is string && data.link.size() <= 200)) &&
+             data.keys().hasAll(['userId', 'title', 'message', 'read', 'timestamp']);
+    }
+
+    match /notifications/{notifId} {
+      allow get: if isOwner(existing().userId) || isAdmin();
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if (isSignedIn() || exists(/databases/$(database)/documents/admins/$(incoming().userId))) && 
+                    isValidId(notifId) && isValidNotification(incoming());
+      allow update: if (isOwner(existing().userId) || isAdmin()) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isOwner(existing().userId) || isAdmin();
+    }
+    
+    // Admin list
+    match /admins/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isAdmin();
+      allow write: if false; // Only manageable via console
+    }
+
+    // --- Project Movements ---
+    function isValidMovement(data) {
+      return data.projectId is string && data.projectName is string &&
+             data.changeType is string && data.details is string &&
+             data.timestamp is number && data.adminEmail is string &&
+             data.keys().hasAll(['projectId', 'projectName', 'changeType', 'details', 'timestamp', 'adminEmail']);
+    }
+
+    match /project_movements/{moveId} {
+      allow read: if true; // Public transparency
+      allow create: if isAdmin() && isValidId(moveId) && isValidMovement(incoming());
+      allow update, delete: if false;
+    }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      allow get: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow list: if (request.query.limit <= 1); // Restricted list for username uniqueness check
+      allow create: if isOwner(userId) && isValidId(userId);
+      allow update: if isOwner(userId) && isValidId(userId);
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // --- Activity Log ---
+    function isValidActivity(data) {
+      return data.type in ['CITIZEN_REGISTRATION', 'ADMIN_ACTION', 'SYSTEM'] &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.timestamp is number &&
+             data.keys().hasAll(['type', 'userId', 'timestamp']);
+    }
+
+    match /activity_log/{logId} {
+      allow get: if isAdmin();
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && isValidId(logId) && isValidActivity(incoming());
+      allow update, delete: if false;
+    }
+  }
+}
